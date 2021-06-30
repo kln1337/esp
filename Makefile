@@ -20,7 +20,7 @@ LDLIBS = -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static -Wl,--
 
 all:
 	$(CC) -I $(SDK)/include -mlongcalls -I $(IDIR) -Werror -Wl, -O0 \
-	-nostdlib -c src/user_main.c -o src/user_main.o
+	-nostdlib -S src/user_main.c -o src/user_main.o
 	$(AR) cru build/app_app.a src/user_main.o
 	$(LD) -L $(SDK)/lib -T $(LDFLAGS) $(LDLIBS) build/app_app.a
 	-Wl,--end-group -o build/app.out

@@ -3,6 +3,7 @@
 #include "user_interface.h"
 #include "gpio.h"
 #include "osapi.h"
+#include "/home/kln/prog/esp/ESP8266_NONOS_SDK-2.2.1/driver_lib/include/driver/uart.h"
 #define LED 2
 
 uint32 priv_param_start_sec;
@@ -17,7 +18,7 @@ user_rf_cal_sector_set(void)
 {
     enum flash_size_map size_map = system_get_flash_size_map();
     uint32 rf_cal_sec = 0;
-
+    
     switch (size_map) {
         case FLASH_SIZE_4M_MAP_256_256:
             rf_cal_sec = 128 - 5;
@@ -105,16 +106,20 @@ user_rf_pre_init(void)
 void ICACHE_FLASH_ATTR user_init(void)
 {
     gpio_init();
-    
+    UartBautRate uart0_br = BIT_RATE_115200;
+    UartBautRate uart1_br = BIT_RATE_115200;
+    uart_init(uart0_br, uart1_br);
     PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO2_U, FUNC_GPIO2);
     gpio_output_set(0, 0, (1 << LED),0);
     while(1) {
-        delay(1000000); //os_delay_us(1000000); 
-        gpio_output_set(0, (1 << LED), 0, 0);
+        // gpio_output_set(0, (1 << LED), 0, 0);
+        os_delay_us(1000000);
         //system_soft_wdt_stop();
-        delay(1000000); //os_delay_us(1000000);//delay(1000000000);
+        //delay(1000000000);
         gpio_output_set((1 << LED), 0, 0, 0);
-        os_printf("SDK version:%s\n", system_get_sdk_version());
+        os_delay_us(1000000);
+        os_printf("HELLO WORLD!!!!!!!!!!!!");
+        //os_printf("SDK version:%s\n", system_get_sdk_version());
     }
     
     //enum flash_size_map size_map = system_get_flash_size_map();
