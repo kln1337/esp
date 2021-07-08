@@ -11,22 +11,22 @@ SIZE=$(XTENSA)xtensa-lx106-elf-size
 
 IDIR=./inc
 SDK=~/prog/esp/ESP8266_NONOS_SDK-2.2.1
+SDK_DRIVER=$(SDK)/driver_lib
 #/opt/ESP8266_NONOS_SDK
 LDFLAGS =$(SDK)/ld/eagle.app.v6.ld
 LDLIBS = -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static -Wl,--start-group -lc -lgcc -lphy -lpp -lnet80211 -llwip -lwpa -lmain -lcrypto
-
+FLASHER=$(SDK)/tools/esptool.py
 
 .PHONY: all clean
 
 all:
-	$(CC) -I $(SDK)/include -mlongcalls -I $(IDIR) -Werror -Wl, -O0 \
-	-nostdlib -S src/user_main.c -o src/user_main.o
+	$(CC) -I $(SDK)/include -mlongcalls -I $(IDIR) -I $(SDK_DRIVER)/include -Werror -Wl, -O0 \
+	-nostdlib -c src/user_main.c -o src/user_main.o
 	$(AR) cru build/app_app.a src/user_main.o
-	$(LD) -L $(SDK)/lib -T $(LDFLAGS) $(LDLIBS) build/app_app.a
-	-Wl,--end-group -o build/app.out
+	$(LD) -L $(SDK)/lib -T $(LDFLAGS) $(LDLIBS) $(SDK)/lib/libdriver.a build/app_app.a -Wl,--end-group -o build/app.out
 	$(SIZE) build/app.out
-	esptool.py elf2image build/app.out
+	$(FLASHER) --chip esp8266 elf2image build/app.out
 flash:
-	esptool.py write_flash --no-compress -ff 26m -fm dio -fs 4MB-c1 0x00000 build/app.out-0x00000.bin 0x10000 build/app.out-0x10000.bin
+	$(FLASHER) write_flash -fs 4MB-c1 --no-compress 0x00000 build/app.out-0x00000.bin 0x10000 build/app.out-0x10000.bin
 clean:
 	rm ./src/*.o ./build/*

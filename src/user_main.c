@@ -3,22 +3,73 @@
 #include "user_interface.h"
 #include "gpio.h"
 #include "osapi.h"
-#include "/home/kln/prog/esp/ESP8266_NONOS_SDK-2.2.1/driver_lib/include/driver/uart.h"
+#include "driver/uart.h"
+#include "user_config.h"
+#include "mem.h"
+#include "ip_addr.h"
+#include "espconn.h"
+#include "common_funcs.h"
+
 #define LED 2
+#define SSID "esp8266"
+#define PSWD "123456789"
+uint8 led_status = 0;
+os_timer_t os_timer; // watch struct ETSTimer (ets_sys.h)
+struct softap_config wifi_config;
 
-uint32 priv_param_start_sec;
 
-void delay(uint32_t count)
+void espconn_connect_cb(void* arg)
 {
-    while(--count);
+    os_printf("Someone connecting to me\n");
 }
 
-uint32 ICACHE_FLASH_ATTR
-user_rf_cal_sector_set(void)
+void uint32_to_array_uint8 (uint32 ptr, uint8 array[4])
+{
+    int i;
+    for (i = 0; i < 4; i++)
+        array[i] = (uint8)(ptr >> 8);
+}
+
+static void ICACHE_FLASH_ATTR tcp_server_start(void)
+{
+    // prepare ip address
+    struct ip_info ip_addr;
+    wifi_get_ip_info(STATION_IF, &ip_addr);
+    // initializating main stuct for server
+    struct espconn srv_conf;
+    srv_conf.type = ESPCONN_TCP;
+    srv_conf.state = ESPCONN_NONE;
+    srv_conf.proto.tcp = (esp_tcp *) os_zalloc(sizeof(esp_tcp));
+    srv_conf.proto.tcp->local_port = 80;
+    // srv_conf.proto.tcp->local_ip = ip_addr.ip;//(uint8 *) &(ip_addr.ip);
+    uint32_to_array_uint8(ip_addr.ip.addr, srv_conf.proto.tcp->local_ip);
+    srv_conf.proto.tcp->connect_callback = espconn_connect_cb;
+    // espconn_regist_connectcb(&espconn, espconn_connect_cb);
+    espconn_accept(&srv_conf);
+    os_printf("IP:%d", ip_addr.ip.addr);
+}
+void timer_handler(void)
+{
+    
+    // if we have client flashing led
+    if (wifi_softap_get_station_num()) {
+        led_status = !led_status;
+        GPIO_OUTPUT_SET(LED, led_status);
+
+        os_printf("Users: %d\n", wifi_softap_get_station_num());
+
+
+        struct station_info *now_station_info = wifi_softap_get_station_info();
+        print_station_info(now_station_info);
+    }
+}
+
+uint32 ICACHE_FLASH_ATTR user_rf_cal_sector_set(void)
 {
     enum flash_size_map size_map = system_get_flash_size_map();
     uint32 rf_cal_sec = 0;
-    
+    uint32 priv_param_start_sec;
+
     switch (size_map) {
         case FLASH_SIZE_4M_MAP_256_256:
             rf_cal_sec = 128 - 5;
@@ -65,62 +116,40 @@ user_rf_cal_sector_set(void)
     return rf_cal_sec;
 }
 
-void ICACHE_FLASH_ATTR
-user_rf_pre_init(void)
+void ICACHE_FLASH_ATTR user_rf_pre_init(void)
 {
 }
-/* void ICACHE_FLASH_ATTR user_pre_init(void) */
-/* { */
-/*   bool rc = false; */
-/*   static const partition_item_t part_table[] =  */
-/*   { */
-/*     {SYSTEM_PARTITION_RF_CAL, */
-/*      0x3fb000, */
-/*      0x1000}, */
-/*     {SYSTEM_PARTITION_PHY_DATA, */
-/*      0x3fc000, */
-/*      0x1000}, */
-/*     {SYSTEM_PARTITION_SYSTEM_PARAMETER, */
-/*      0x3fd000, */
-/*      0x3000}, */
-/*   }; */
-
-/*   // This isn't an ideal approach but there's not much point moving on unless */
-/*   // or until this has succeeded cos otherwise the SDK will just barf and  */
-/*   // refuse to call user_init() */
-/*   while (!rc) */
-/*   { */
-/*     rc = system_partition_table_regist(part_table, */
-/* 				       sizeof(part_table)/sizeof(part_table[0]), */
-/*                                        4); */
-/*   } */
-
-/*   return; */
-/* } */
-
-/* void user_spi_flash_dio_to_qio_pre_init(void) */
-/* { */
-/*     // EMPTY */
-/* } */
 
 void ICACHE_FLASH_ATTR user_init(void)
 {
+    int i = 0;
     gpio_init();
-    UartBautRate uart0_br = BIT_RATE_115200;
-    UartBautRate uart1_br = BIT_RATE_115200;
-    uart_init(uart0_br, uart1_br);
-    PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO2_U, FUNC_GPIO2);
-    gpio_output_set(0, 0, (1 << LED),0);
-    while(1) {
-        // gpio_output_set(0, (1 << LED), 0, 0);
-        os_delay_us(1000000);
-        //system_soft_wdt_stop();
-        //delay(1000000000);
-        gpio_output_set((1 << LED), 0, 0, 0);
-        os_delay_us(1000000);
-        os_printf("HELLO WORLD!!!!!!!!!!!!");
-        //os_printf("SDK version:%s\n", system_get_sdk_version());
-    }
     
-    //enum flash_size_map size_map = system_get_flash_size_map();
+    uart_init(BIT_RATE_115200, BIT_RATE_115200);
+       
+    system_soft_wdt_stop(); // stop watch dog
+    PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO2_U, FUNC_GPIO2);
+    // work with timer
+    os_timer_disarm(&os_timer); // reset struct os_timer_t
+    os_timer_setfn(&os_timer, (os_timer_func_t*)timer_handler, NULL); // set handler func
+    os_timer_arm(&os_timer, 1000, 1); // set time for timer
+
+    // Wifi setup
+    wifi_set_opmode_current(SOFTAP_MODE); // set wifi like slave
+    os_memset(&wifi_config, 0, sizeof(struct softap_config)); // reset wifi_config
+    wifi_config.authmode = AUTH_WPA2_PSK; // set auth
+    wifi_config.max_connection = 5;
+    os_sprintf(wifi_config.ssid, "%s", SSID); // set ssid
+    os_sprintf(wifi_config.password, "%s", PSWD); // set password
+
+    
+    // Appying settings 
+    if (wifi_softap_set_config_current(&wifi_config)){
+        // TCP server
+        tcp_server_start();
+        // get current station info
+    } else
+        os_printf("SOFTAP_MODE didn't set");
 }
+
+
