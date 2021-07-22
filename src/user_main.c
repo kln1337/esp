@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <common_funcs.h>
 #include "ets_sys.h"
 #include "user_interface.h"
 #include "gpio.h"
@@ -8,60 +9,88 @@
 #include "mem.h"
 #include "ip_addr.h"
 #include "espconn.h"
-#include "common_funcs.h"
 
 #define LED 2
 #define SSID "esp8266"
 #define PSWD "123456789"
+
 uint8 led_status = 0;
 os_timer_t os_timer; // watch struct ETSTimer (ets_sys.h)
 struct softap_config wifi_config;
+struct espconn srv_conf;
 
+//my_client client  = {.number = 0, .ip = 0};
+
+uint8 start_page[] = "<!DOCTYPE html>\n<html>\n<body>\n<h1>My First Heading</h1>\n<p>My first paragraph.</p>\n\n</body>\n</html>";
 
 void espconn_connect_cb(void* arg)
 {
-    os_printf("Someone connecting to me\n");
+    os_printf("Client ");
+    print_ip(srv_conf.proto.tcp->remote_ip);
+    os_printf("Port: %d\n\n", srv_conf.proto.tcp->remote_port);
+    espconn_send(&srv_conf, start_page, sizeof(start_page) / sizeof(uint8));
 }
 
-void uint32_to_array_uint8 (uint32 ptr, uint8 array[4])
+void tcp_recv_cb(void *arg, char *pdata, unsigned short len)
 {
-    int i;
-    for (i = 0; i < 4; i++)
-        array[i] = (uint8)(ptr >> 8);
+    struct espconn *client = (struct espconn*)arg;
+    os_printf("Recv_callback\n");
+    os_printf("Data lenght: %d\n\n", len);
+    print_tcp_ip(client);
+    print_data(pdata, len);
+
+    // espconn_send(&srv_conf, pdata, len);
+}
+
+void tcp_sent_cb(void *arg)
+{
+    
+}
+
+void tcp_reconnect_cb(void *arg, sint8 err)
+{
+    os_printf("reconnect: error code> %d\n", err);
 }
 
 static void ICACHE_FLASH_ATTR tcp_server_start(void)
 {
-    // prepare ip address
-    struct ip_info ip_addr;
-    wifi_get_ip_info(STATION_IF, &ip_addr);
+    // prepare server ip address
+    struct ip_info ip_addr_srv;
+    wifi_get_ip_info(STATION_IF, &ip_addr_srv);
+    
     // initializating main stuct for server
-    struct espconn srv_conf;
     srv_conf.type = ESPCONN_TCP;
     srv_conf.state = ESPCONN_NONE;
     srv_conf.proto.tcp = (esp_tcp *) os_zalloc(sizeof(esp_tcp));
     srv_conf.proto.tcp->local_port = 80;
-    // srv_conf.proto.tcp->local_ip = ip_addr.ip;//(uint8 *) &(ip_addr.ip);
-    uint32_to_array_uint8(ip_addr.ip.addr, srv_conf.proto.tcp->local_ip);
+    uint32_to_array_uint8(ip_addr_srv.ip.addr, srv_conf.proto.tcp->local_ip);
+    // set callback func for connect
     srv_conf.proto.tcp->connect_callback = espconn_connect_cb;
-    // espconn_regist_connectcb(&espconn, espconn_connect_cb);
+    // set callback func for recive data
+    espconn_regist_recvcb(&srv_conf, tcp_recv_cb);
+    // set callback func for sent data
+    espconn_regist_sentcb(&srv_conf, tcp_sent_cb);
+    // set callback func for reconnect
+    espconn_regist_reconcb(&srv_conf, tcp_reconnect_cb);
     espconn_accept(&srv_conf);
-    os_printf("IP:%d", ip_addr.ip.addr);
+    os_printf("Server");
+    print_ip(srv_conf.proto.tcp->local_ip);
 }
+
 void timer_handler(void)
 {
-    
+    struct ip_info ip_addr; 
+   
     // if we have client flashing led
     if (wifi_softap_get_station_num()) {
         led_status = !led_status;
         GPIO_OUTPUT_SET(LED, led_status);
-
-        os_printf("Users: %d\n", wifi_softap_get_station_num());
-
-
+        
         struct station_info *now_station_info = wifi_softap_get_station_info();
-        print_station_info(now_station_info);
-    }
+
+        /* os_printf("Client info\n"); */
+        /* print_station_info(now_station_info); */
+    }   
 }
 
 uint32 ICACHE_FLASH_ATTR user_rf_cal_sector_set(void)
@@ -129,10 +158,11 @@ void ICACHE_FLASH_ATTR user_init(void)
        
     system_soft_wdt_stop(); // stop watch dog
     PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO2_U, FUNC_GPIO2);
+    
     // work with timer
     os_timer_disarm(&os_timer); // reset struct os_timer_t
     os_timer_setfn(&os_timer, (os_timer_func_t*)timer_handler, NULL); // set handler func
-    os_timer_arm(&os_timer, 1000, 1); // set time for timer
+    os_timer_arm(&os_timer, 5000, 1); // set time for timer 
 
     // Wifi setup
     wifi_set_opmode_current(SOFTAP_MODE); // set wifi like slave
@@ -147,7 +177,6 @@ void ICACHE_FLASH_ATTR user_init(void)
     if (wifi_softap_set_config_current(&wifi_config)){
         // TCP server
         tcp_server_start();
-        // get current station info
     } else
         os_printf("SOFTAP_MODE didn't set");
 }
