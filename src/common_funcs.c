@@ -31,7 +31,8 @@ void print_tcp_ip(struct espconn* econn)
 void print_data(char *pdata, unsigned short len)
 {
     for (uint16 i = 0; i < len; i++) {
-        os_printf("%c", pdata++);
+        os_printf("%c", *(pdata++));
     }
     os_printf("\n\n");
 }
+

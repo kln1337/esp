@@ -13,6 +13,8 @@
 #define LED 2
 #define SSID "esp8266"
 #define PSWD "123456789"
+#define PORT 80
+
 
 uint8 led_status = 0;
 os_timer_t os_timer; // watch struct ETSTimer (ets_sys.h)
@@ -21,13 +23,30 @@ struct espconn srv_conf;
 
 //my_client client  = {.number = 0, .ip = 0};
 
-uint8 start_page[] = "<!DOCTYPE html>\n<html>\n<body>\n<h1>My First Heading</h1>\n<p>My first paragraph.</p>\n\n</body>\n</html>";
+uint8 start_page[] = "<!DOCTYPE html>\
+<html>\
+<body>\
+\
+<h1>The button formaction attribute</h1>\
+\
+<form action=\"/action_page.php\" method=\"get\">\
+  <label for=\"fname\">First name:</label>\
+  <input type=\"text\" id=\"fname\" name=\"fname\"><br><br>\
+  <label for=\"lname\">Last name:</label>\
+  <input type=\"text\" id=\"lname\" name=\"lname\"><br><br>\
+  <button type=\"submit\">Submit</button>\
+  <button type=\"submit\" formaction=\"/act\">Submit to another page</button>\
+</form>\
+\
+</body>\
+</html>";
+
 
 void espconn_connect_cb(void* arg)
 {
-    os_printf("Client ");
+    os_printf("Client is connected.");
     print_ip(srv_conf.proto.tcp->remote_ip);
-    os_printf("Port: %d\n\n", srv_conf.proto.tcp->remote_port);
+    os_printf(" Port: %d\n\n", srv_conf.proto.tcp->remote_port);
     espconn_send(&srv_conf, start_page, sizeof(start_page) / sizeof(uint8));
 }
 
@@ -38,7 +57,7 @@ void tcp_recv_cb(void *arg, char *pdata, unsigned short len)
     os_printf("Data lenght: %d\n\n", len);
     print_tcp_ip(client);
     print_data(pdata, len);
-
+    
     // espconn_send(&srv_conf, pdata, len);
 }
 
@@ -57,15 +76,16 @@ static void ICACHE_FLASH_ATTR tcp_server_start(void)
     // prepare server ip address
     struct ip_info ip_addr_srv;
     wifi_get_ip_info(STATION_IF, &ip_addr_srv);
-    
+    os_printf("\nGet server ip:%d\n", ip_addr_srv.ip.addr);
     // initializating main stuct for server
     srv_conf.type = ESPCONN_TCP;
     srv_conf.state = ESPCONN_NONE;
     srv_conf.proto.tcp = (esp_tcp *) os_zalloc(sizeof(esp_tcp));
-    srv_conf.proto.tcp->local_port = 80;
+    srv_conf.proto.tcp->local_port = PORT;
     uint32_to_array_uint8(ip_addr_srv.ip.addr, srv_conf.proto.tcp->local_ip);
     // set callback func for connect
     srv_conf.proto.tcp->connect_callback = espconn_connect_cb;
+    // espcoon_regist_connectcb(&srv_conf, espconn_connect_cb);
     // set callback func for recive data
     espconn_regist_recvcb(&srv_conf, tcp_recv_cb);
     // set callback func for sent data
@@ -73,8 +93,9 @@ static void ICACHE_FLASH_ATTR tcp_server_start(void)
     // set callback func for reconnect
     espconn_regist_reconcb(&srv_conf, tcp_reconnect_cb);
     espconn_accept(&srv_conf);
-    os_printf("Server");
+    os_printf("\n\nServer is started.");
     print_ip(srv_conf.proto.tcp->local_ip);
+    os_printf("Port: %d\n", srv_conf.proto.tcp->local_port);
 }
 
 void timer_handler(void)
@@ -85,8 +106,7 @@ void timer_handler(void)
     if (wifi_softap_get_station_num()) {
         led_status = !led_status;
         GPIO_OUTPUT_SET(LED, led_status);
-        
-        struct station_info *now_station_info = wifi_softap_get_station_info();
+        //struct station_info *now_station_info = wifi_softap_get_station_info();
 
         /* os_printf("Client info\n"); */
         /* print_station_info(now_station_info); */
